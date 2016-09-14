@@ -20,6 +20,7 @@ namespace Microsoft.EntityFrameworkCore.Infrastructure
         private readonly DbContext _context;
         private IDatabaseCreator _databaseCreator;
         private IDbContextTransactionManager _transactionManager;
+        private IExecutionStrategyFactory _executionStrategyFactory;
 
         /// <summary>
         ///     Initializes a new instance of the <see cref="DatabaseFacade" /> class. Instances of this class are typically
@@ -135,6 +136,60 @@ namespace Microsoft.EntityFrameworkCore.Infrastructure
             => TransactionManager.RollbackTransaction();
 
         /// <summary>
+        ///     Creates an instance of the configured <see cref="IExecutionStrategy"/>.
+        /// </summary>
+        /// <returns>An <see cref="IExecutionStrategy"/> instance.</returns>
+        public virtual IExecutionStrategy CreateExecutionStrategy()
+            => ExecutionStrategyFactory.Create();
+
+        /// <summary>
+        ///     Executes the operation using the configured <see cref="IExecutionStrategy"/> inside a transaction.
+        /// </summary>
+        /// <param name="operation">
+        ///     A delegate representing an executable operation that returns the result of type <typeparamref name="TResult" />.
+        /// </param>
+        /// <typeparam name="TResult">The return type of <paramref name="operation" />.</typeparam>
+        /// <returns>The result from the operation.</returns>
+        public virtual TResult ExecuteWithStrategyInTransaction<TResult>([NotNull] Func<DbContext, TResult> operation)
+            => ExecutionStrategyFactory.Create().Execute(ExecuteInTransaction, operation);
+
+        private TResult ExecuteInTransaction<TResult>(Func<DbContext, TResult> operation)
+        {
+            using (var transaction = BeginTransaction())
+            {
+                var result = operation(_context);
+                transaction.Commit();
+
+                return result;
+            }
+        }
+
+        /// <summary>
+        ///     Asynchronously executes the operation using the configured <see cref="IExecutionStrategy"/> inside a transaction.
+        /// </summary>
+        /// <param name="operation">
+        ///     A delegate representing an executable operation that returns the result of type <typeparamref name="TResult" />.
+        /// </param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <typeparam name="TResult">The return type of <paramref name="operation" />.</typeparam>
+        /// <returns>The result from the operation.</returns>
+        public virtual Task<TResult> ExecuteWithStrategyInTransactionAsync<TResult>(
+            [NotNull] Func<DbContext, CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
+            => ExecutionStrategyFactory.Create().ExecuteAsync(ExecuteInTransactionAsync, operation, cancellationToken);
+
+        private async Task<TResult> ExecuteInTransactionAsync<TResult>(
+            Func<DbContext, CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
+        {
+            using (var transaction = await BeginTransactionAsync(cancellationToken))
+            {
+                var result = await operation(_context, cancellationToken);
+                transaction.Commit();
+
+                return result;
+            }
+        }
+
+        /// <summary>
         ///     <para>
         ///         Gets the current <see cref="IDbContextTransaction" /> being used by the context, or null
         ///         if no transaction is in use.
@@ -186,5 +241,8 @@ namespace Microsoft.EntityFrameworkCore.Infrastructure
 
         private IDatabaseCreator DatabaseCreator
             => _databaseCreator ?? (_databaseCreator = this.GetService<IDatabaseCreator>());
+
+        private IExecutionStrategyFactory ExecutionStrategyFactory
+            => _executionStrategyFactory ?? (_executionStrategyFactory = this.GetService<IExecutionStrategyFactory>());
     }
 }

@@ -8,6 +8,6 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
     public static class SqlServerDatabaseFacadeExtensions
     {
         public static void EnsureClean(this DatabaseFacade databaseFacade)
-            => new SqlServerDatabaseCleaner().Clean(databaseFacade);
+            => databaseFacade.CreateExecutionStrategy().Execute(database => new SqlServerDatabaseCleaner().Clean(database), databaseFacade);
     }
 }

@@ -39,7 +39,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         {
             public DbSet<FastUn> FastUns { get; set; }
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("MemoryOptimizedTest"));
+                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("MemoryOptimizedTest"), b => b.ApplyConfiguration());
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
             {

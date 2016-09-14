@@ -17,7 +17,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 .AddEntityFrameworkSqlServer()
                 .BuildServiceProvider();
 
-            using (var context = new Context(serviceProvider, "ComputedColumns"))
+            using (var context = new Context(serviceProvider, TestStore.Name))
             {
                 context.Database.EnsureClean();
 
@@ -37,7 +37,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 .AddEntityFrameworkSqlServer()
                 .BuildServiceProvider();
 
-            using (var context = new Context(serviceProvider, "ComputedColumns"))
+            using (var context = new Context(serviceProvider, TestStore.Name))
             {
                 context.Database.EnsureClean();
 
@@ -65,7 +65,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString(_databaseName))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString(_databaseName), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -121,7 +121,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString(_databaseName))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString(_databaseName), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -137,7 +137,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 .AddEntityFrameworkSqlServer()
                 .BuildServiceProvider();
 
-            using (var context = new NullableContext(serviceProvider, "NullableEnumComputedColumns"))
+            using (var context = new NullableContext(serviceProvider, TestStore.Name))
             {
                 context.Database.EnsureClean();
 
@@ -147,5 +147,14 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 Assert.Equal(FlagEnum.AValue | FlagEnum.BValue, entity.CalculatedFlagEnum);
             }
         }
+
+        public ComputedColumnTest()
+        {
+            TestStore = SqlServerTestStore.CreateScratch();
+        }
+
+        protected SqlServerTestStore TestStore { get; }
+
+        public void Dispose() => TestStore.Dispose();
     }
 }

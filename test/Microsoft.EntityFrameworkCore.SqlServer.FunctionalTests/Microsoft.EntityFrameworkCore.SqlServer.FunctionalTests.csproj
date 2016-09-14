@@ -149,6 +149,7 @@
     <Compile Include="Utilities\SqlServerConfiguredConditionAttribute.cs" />
     <Compile Include="Utilities\SqlServerTestStore.cs" />
     <Compile Include="Utilities\TestEnvironment.cs" />
+    <Compile Include="Utilities\TestSqlAzureExecutionStrategy.cs" />
     <Compile Include="Utilities\TestSqlServerModelSource.cs" />
     <Compile Include="WarningsSqlServerFixture.cs" />
     <Compile Include="WarningsSqlServerTest.cs" />

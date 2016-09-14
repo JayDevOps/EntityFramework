@@ -79,7 +79,7 @@ namespace Microsoft.EntityFrameworkCore.CrossStore.FunctionalTests
             if (sqlServerTestStore != null)
             {
                 var optionsBuilder = new DbContextOptionsBuilder();
-                optionsBuilder.UseSqlServer(sqlServerTestStore.Connection);
+                optionsBuilder.UseSqlServer(sqlServerTestStore.Connection, b => b.ApplyConfiguration());
 
                 var context = new CrossStoreContext(optionsBuilder.Options);
                 context.Database.EnsureCreated();

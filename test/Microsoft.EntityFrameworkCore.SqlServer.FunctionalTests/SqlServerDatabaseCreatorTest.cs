@@ -8,12 +8,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
@@ -80,18 +82,21 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         {
             using (var testDatabase = await SqlServerTestStore.CreateScratchAsync(createDatabase: false))
             {
-                var creator = GetDatabaseCreator(testDatabase);
+                var c = (TestDatabaseCreator)GetDatabaseCreator(testDatabase);
 
-                var errorNumber = async
-                    ? (await Assert.ThrowsAsync<SqlException>(() => ((TestDatabaseCreator)creator).HasTablesAsyncBase())).Number
-                    : Assert.Throws<SqlException>(() => ((TestDatabaseCreator)creator).HasTablesBase()).Number;
+                await c.ExecutionStrategyFactory.Create().ExecuteAsync(async (creator, ct) =>
+                    {
+                        var errorNumber = async
+                            ? (await Assert.ThrowsAsync<SqlException>(() => creator.HasTablesAsyncBase(ct))).Number
+                            : Assert.Throws<SqlException>(() => creator.HasTablesBase()).Number;
 
-                if (errorNumber != 233) // skip if no-process transient failure
-                {
-                    Assert.Equal(
-                        4060, // Login failed error number
-                        errorNumber);
-                }
+                        if (errorNumber != 233) // skip if no-process transient failure
+                        {
+                            Assert.Equal(
+                                4060, // Login failed error number
+                                errorNumber);
+                        }
+                    }, c);
             }
         }
 
@@ -227,7 +232,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
                 var optionsBuilder = new DbContextOptionsBuilder()
                     .UseInternalServiceProvider(serviceProvider)
-                    .UseSqlServer(testDatabase.ConnectionString);
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration());
 
                 using (var context = new BloggingContext(optionsBuilder.Options))
                 {
@@ -368,14 +373,26 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         private static IServiceProvider CreateContextServices(SqlServerTestStore testStore)
             => ((IInfrastructure<IServiceProvider>)new BloggingContext(
                 new DbContextOptionsBuilder()
-                    .UseSqlServer(testStore.ConnectionString)
+                    .UseSqlServer(testStore.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(new ServiceCollection()
                         .AddEntityFrameworkSqlServer()
+                        .AddScoped<SqlServerExecutionStrategyFactory, TestSqlServerExecutionStrategyFactory>()
                         .AddScoped<SqlServerDatabaseCreator, TestDatabaseCreator>().BuildServiceProvider()).Options))
                 .Instance;
 
         private static IRelationalDatabaseCreator GetDatabaseCreator(SqlServerTestStore testStore)
             => CreateContextServices(testStore).GetRequiredService<IRelationalDatabaseCreator>();
+
+        // ReSharper disable once ClassNeverInstantiated.Local
+        private class TestSqlServerExecutionStrategyFactory : SqlServerExecutionStrategyFactory
+        {
+            public TestSqlServerExecutionStrategyFactory(IDbContextOptions options, ICurrentDbContext currentDbContext, ILogger<IExecutionStrategy> logger)
+                : base(options, currentDbContext, logger)
+            {
+            }
+
+            protected override IExecutionStrategy CreateDefaultStrategy(ExecutionStrategyContext context) => NoopExecutionStrategy.Instance;
+        }
 
         private class BloggingContext : DbContext
         {
@@ -401,8 +418,9 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 IMigrationsSqlGenerator sqlGenerator,
                 IMigrationCommandExecutor migrationCommandExecutor,
                 IModel model,
-                IRawSqlCommandBuilder rawSqlCommandBuilder)
-                : base(connection, modelDiffer, sqlGenerator, migrationCommandExecutor, model, rawSqlCommandBuilder)
+                IRawSqlCommandBuilder rawSqlCommandBuilder,
+                IExecutionStrategyFactory executionStrategyFactory)
+                : base(connection, modelDiffer, sqlGenerator, migrationCommandExecutor, model, rawSqlCommandBuilder, executionStrategyFactory)
             {
             }
 
@@ -410,6 +428,8 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             public Task<bool> HasTablesAsyncBase(CancellationToken cancellationToken = default(CancellationToken))
                 => HasTablesAsync(cancellationToken);
+
+            public new IExecutionStrategyFactory ExecutionStrategyFactory => base.ExecutionStrategyFactory;
         }
     }
 }

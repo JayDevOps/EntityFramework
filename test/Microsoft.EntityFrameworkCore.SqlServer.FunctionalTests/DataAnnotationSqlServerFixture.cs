@@ -57,7 +57,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             return SqlServerTestStore.GetOrCreateShared(DatabaseName, () =>
                 {
                     var optionsBuilder = new DbContextOptionsBuilder()
-                        .UseSqlServer(_connectionString)
+                        .UseSqlServer(_connectionString, b => b.ApplyConfiguration())
                         .UseInternalServiceProvider(_serviceProvider);
 
                     using (var context = new DataAnnotationContext(optionsBuilder.Options))
@@ -74,7 +74,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         {
             var optionsBuilder = new DbContextOptionsBuilder()
                 .EnableSensitiveDataLogging()
-                .UseSqlServer(testStore.Connection)
+                .UseSqlServer(testStore.Connection, b => b.ApplyConfiguration())
                 .UseInternalServiceProvider(_serviceProvider);
 
             var context = new DataAnnotationContext(optionsBuilder.Options);

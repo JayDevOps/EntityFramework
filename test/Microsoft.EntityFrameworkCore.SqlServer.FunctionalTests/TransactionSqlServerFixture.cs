@@ -23,45 +23,57 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
         public override SqlServerTestStore CreateTestStore()
         {
-            return SqlServerTestStore.GetOrCreateShared(DatabaseName, false, () =>
-            {
-                var optionsBuilder = new DbContextOptionsBuilder()
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString(DatabaseName), b => b.MaxBatchSize(1))
-                    .UseInternalServiceProvider(_serviceProvider);
-
-                using (var context = new DbContext(optionsBuilder.Options))
+            return SqlServerTestStore.GetOrCreateShared(DatabaseName, () =>
                 {
-                    context.Database.EnsureClean();
+                    var optionsBuilder = new DbContextOptionsBuilder()
+                        .UseSqlServer(SqlServerTestStore.CreateConnectionString(DatabaseName), b =>
+                            {
+                                b.ApplyConfiguration();
+                                b.MaxBatchSize(1);
+                            })
+                        .UseInternalServiceProvider(_serviceProvider);
 
-                    var connection = context.Database.GetDbConnection();
-
-                    connection.Open();
-
-                    using (var command = connection.CreateCommand())
+                    using (var context = new DbContext(optionsBuilder.Options))
                     {
-                        command.CommandText = "ALTER DATABASE [" + connection.Database + "] SET ALLOW_SNAPSHOT_ISOLATION ON";
-                        command.ExecuteNonQuery();
-                    }
+                        context.Database.EnsureClean();
 
-                    using (var command = connection.CreateCommand())
-                    {
-                        command.CommandText = "ALTER DATABASE [" + connection.Database + "] SET READ_COMMITTED_SNAPSHOT ON";
-                        command.ExecuteNonQuery();
-                    }
+                        var connection = context.Database.GetDbConnection();
 
-                    connection.Close();
-                }
-            });
+                        connection.Open();
+
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = "ALTER DATABASE [" + connection.Database + "] SET ALLOW_SNAPSHOT_ISOLATION ON";
+                            command.ExecuteNonQuery();
+                        }
+
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = "ALTER DATABASE [" + connection.Database + "] SET READ_COMMITTED_SNAPSHOT ON";
+                            command.ExecuteNonQuery();
+                        }
+
+                        connection.Close();
+                    }
+                });
         }
 
         public override DbContext CreateContext(SqlServerTestStore testStore)
             => new DbContext(new DbContextOptionsBuilder()
-                .UseSqlServer(testStore.ConnectionString, b => b.MaxBatchSize(1))
+                .UseSqlServer(testStore.ConnectionString, b =>
+                    {
+                        b.ApplyConfiguration();
+                        b.MaxBatchSize(1);
+                    })
                 .UseInternalServiceProvider(_serviceProvider).Options);
 
         public override DbContext CreateContext(DbConnection connection)
             => new DbContext(new DbContextOptionsBuilder()
-                .UseSqlServer(connection, b => b.MaxBatchSize(1))
+                .UseSqlServer(connection, b =>
+                    {
+                        b.ApplyConfiguration();
+                        b.MaxBatchSize(1);
+                    })
                 .UseInternalServiceProvider(_serviceProvider).Options);
     }
 }

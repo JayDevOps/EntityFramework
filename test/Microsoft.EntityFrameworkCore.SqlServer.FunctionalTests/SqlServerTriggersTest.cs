@@ -166,7 +166,7 @@ END");
                 => new TriggersContext(new DbContextOptionsBuilder()
                     .EnableSensitiveDataLogging()
                     .UseInternalServiceProvider(_serviceProvider)
-                    .UseSqlServer(testStore.Connection).Options);
+                    .UseSqlServer(testStore.Connection, b => b.ApplyConfiguration()).Options);
         }
 
         public class TriggersContext : DbContext

@@ -31,12 +31,12 @@ namespace Microsoft.EntityFrameworkCore.InMemory.FunctionalTests
             return optionsBuilder.Options;
         }
 
-        protected override void CreateAndSeedDatabase(string databaseName, Func<MonsterContext> createContext)
+        protected override void CreateAndSeedDatabase(string databaseName, Func<MonsterContext> createContext, Action<MonsterContext> seed)
         {
             using (var context = createContext())
             {
                 EnsureClean(context);
-                context.SeedUsingFKs();
+                seed(context);
             }
         }
 

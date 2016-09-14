@@ -46,7 +46,7 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.FunctionalTests
                 DataSource = name + ".db"
             }.ConnectionString;
 
-        protected override void CreateAndSeedDatabase(string databaseName, Func<MonsterContext> createContext)
+        protected override void CreateAndSeedDatabase(string databaseName, Func<MonsterContext> createContext, Action<MonsterContext> seed)
         {
             var creationLock = _creationLocks.GetOrAdd(databaseName, n => new object());
             lock (creationLock)
@@ -56,7 +56,7 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.FunctionalTests
                     using (var context = createContext())
                     {
                         EnsureClean(context);
-                        context.SeedUsingFKs();
+                        seed(context);
                     }
 
                     _createdDatabases.Add(databaseName);

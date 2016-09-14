@@ -24,7 +24,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         public void Inserts_are_batched_correctly(bool clientPk, bool clientFk, bool clientOrder)
         {
             var optionsBuilder = new DbContextOptionsBuilder();
-            optionsBuilder.UseSqlServer(_testStore.Connection);
+            optionsBuilder.UseSqlServer(_testStore.Connection, b => b.ApplyConfiguration());
 
             var expectedBlogs = new List<Blog>();
             using (var context = new BloggingContext(_serviceProvider, optionsBuilder.Options))
@@ -68,7 +68,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         public void Inserts_and_updates_are_batched_correctly()
         {
             var optionsBuilder = new DbContextOptionsBuilder();
-            optionsBuilder.UseSqlServer(_testStore.Connection);
+            optionsBuilder.UseSqlServer(_testStore.Connection, b => b.ApplyConfiguration());
 
             var expectedBlogs = new List<Blog>();
             using (var context = new BloggingContext(_serviceProvider, optionsBuilder.Options))

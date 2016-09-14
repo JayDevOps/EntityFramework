@@ -27,45 +27,54 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         [Fact]
         public void Can_use_decimal_as_identity_column()
         {
-            var numNum1 = new NumNum { TheWalrus = "I" };
-            var numNum2 = new NumNum { TheWalrus = "Am" };
-
-            var anNum1 = new AnNum { TheWalrus = "Goo goo" };
-            var anNum2 = new AnNum { TheWalrus = "g'joob" };
-
-            var adNum1 = new AdNum { TheWalrus = "Eggman" };
-            var adNum2 = new AdNum { TheWalrus = "Eggmen" };
-
-            using (var context = new NumNumContext())
+            using (var testDatabase = SqlServerTestStore.CreateScratch())
             {
-                context.Database.EnsureClean();
+                var optionsBuilder = new DbContextOptionsBuilder()
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
+                    .UseInternalServiceProvider(_fixture.ServiceProvider);
 
-                context.AddRange(numNum1, numNum2, adNum1, adNum2, anNum1, anNum2);
+                var numNum1 = new NumNum { TheWalrus = "I" };
+                var numNum2 = new NumNum { TheWalrus = "Am" };
 
-                context.SaveChanges();
-            }
+                var anNum1 = new AnNum { TheWalrus = "Goo goo" };
+                var anNum2 = new AnNum { TheWalrus = "g'joob" };
 
-            using (var context = new NumNumContext())
-            {
-                Assert.Equal(numNum1.Id, context.NumNums.Single(e => e.TheWalrus == "I").Id);
-                Assert.Equal(numNum2.Id, context.NumNums.Single(e => e.TheWalrus == "Am").Id);
+                var adNum1 = new AdNum { TheWalrus = "Eggman" };
+                var adNum2 = new AdNum { TheWalrus = "Eggmen" };
 
-                Assert.Equal(anNum1.Id, context.AnNums.Single(e => e.TheWalrus == "Goo goo").Id);
-                Assert.Equal(anNum2.Id, context.AnNums.Single(e => e.TheWalrus == "g'joob").Id);
+                using (var context = new NumNumContext(optionsBuilder.Options))
+                {
+                    context.Database.EnsureClean();
 
-                Assert.Equal(adNum1.Id, context.AdNums.Single(e => e.TheWalrus == "Eggman").Id);
-                Assert.Equal(adNum2.Id, context.AdNums.Single(e => e.TheWalrus == "Eggmen").Id);
+                    context.AddRange(numNum1, numNum2, adNum1, adNum2, anNum1, anNum2);
+
+                    context.SaveChanges();
+                }
+
+                using (var context = new NumNumContext(optionsBuilder.Options))
+                {
+                    Assert.Equal(numNum1.Id, context.NumNums.Single(e => e.TheWalrus == "I").Id);
+                    Assert.Equal(numNum2.Id, context.NumNums.Single(e => e.TheWalrus == "Am").Id);
+
+                    Assert.Equal(anNum1.Id, context.AnNums.Single(e => e.TheWalrus == "Goo goo").Id);
+                    Assert.Equal(anNum2.Id, context.AnNums.Single(e => e.TheWalrus == "g'joob").Id);
+
+                    Assert.Equal(adNum1.Id, context.AdNums.Single(e => e.TheWalrus == "Eggman").Id);
+                    Assert.Equal(adNum2.Id, context.AdNums.Single(e => e.TheWalrus == "Eggmen").Id);
+                }
             }
         }
 
         private class NumNumContext : DbContext
         {
+            public NumNumContext(DbContextOptions options)
+                : base(options)
+            {
+            }
+
             public DbSet<NumNum> NumNums { get; set; }
             public DbSet<AnNum> AnNums { get; set; }
             public DbSet<AdNum> AdNums { get; set; }
-
-            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("NumNum"));
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
             {
@@ -107,45 +116,54 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         [Fact]
         public void Can_use_string_enum_or_byte_array_as_key()
         {
-            var sNum1 = new SNum { TheWalrus = "I" };
-            var sNum2 = new SNum { TheWalrus = "Am" };
-
-            var enNum1 = new EnNum { TheWalrus = "Goo goo", Id = ENum.BNum };
-            var enNum2 = new EnNum { TheWalrus = "g'joob", Id = ENum.CNum };
-
-            var bNum1 = new BNum { TheWalrus = "Eggman" };
-            var bNum2 = new BNum { TheWalrus = "Eggmen" };
-
-            using (var context = new ENumContext())
+            using (var testDatabase = SqlServerTestStore.CreateScratch())
             {
-                context.Database.EnsureClean();
+                var optionsBuilder = new DbContextOptionsBuilder()
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
+                    .UseInternalServiceProvider(_fixture.ServiceProvider);
 
-                context.AddRange(sNum1, sNum2, enNum1, enNum2, bNum1, bNum2);
+                var sNum1 = new SNum { TheWalrus = "I" };
+                var sNum2 = new SNum { TheWalrus = "Am" };
 
-                context.SaveChanges();
-            }
+                var enNum1 = new EnNum { TheWalrus = "Goo goo", Id = ENum.BNum };
+                var enNum2 = new EnNum { TheWalrus = "g'joob", Id = ENum.CNum };
 
-            using (var context = new ENumContext())
-            {
-                Assert.Equal(sNum1.Id, context.SNums.Single(e => e.TheWalrus == "I").Id);
-                Assert.Equal(sNum2.Id, context.SNums.Single(e => e.TheWalrus == "Am").Id);
+                var bNum1 = new BNum { TheWalrus = "Eggman" };
+                var bNum2 = new BNum { TheWalrus = "Eggmen" };
 
-                Assert.Equal(enNum1.Id, context.EnNums.Single(e => e.TheWalrus == "Goo goo").Id);
-                Assert.Equal(enNum2.Id, context.EnNums.Single(e => e.TheWalrus == "g'joob").Id);
+                using (var context = new ENumContext(optionsBuilder.Options))
+                {
+                    context.Database.EnsureClean();
 
-                Assert.Equal(bNum1.Id, context.BNums.Single(e => e.TheWalrus == "Eggman").Id);
-                Assert.Equal(bNum2.Id, context.BNums.Single(e => e.TheWalrus == "Eggmen").Id);
+                    context.AddRange(sNum1, sNum2, enNum1, enNum2, bNum1, bNum2);
+
+                    context.SaveChanges();
+                }
+
+                using (var context = new ENumContext(optionsBuilder.Options))
+                {
+                    Assert.Equal(sNum1.Id, context.SNums.Single(e => e.TheWalrus == "I").Id);
+                    Assert.Equal(sNum2.Id, context.SNums.Single(e => e.TheWalrus == "Am").Id);
+
+                    Assert.Equal(enNum1.Id, context.EnNums.Single(e => e.TheWalrus == "Goo goo").Id);
+                    Assert.Equal(enNum2.Id, context.EnNums.Single(e => e.TheWalrus == "g'joob").Id);
+
+                    Assert.Equal(bNum1.Id, context.BNums.Single(e => e.TheWalrus == "Eggman").Id);
+                    Assert.Equal(bNum2.Id, context.BNums.Single(e => e.TheWalrus == "Eggmen").Id);
+                }
             }
         }
 
         private class ENumContext : DbContext
         {
+            public ENumContext(DbContextOptions options)
+                : base(options)
+            {
+            }
+
             public DbSet<SNum> SNums { get; set; }
             public DbSet<EnNum> EnNums { get; set; }
             public DbSet<BNum> BNums { get; set; }
-
-            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("ENum"));
         }
 
         private class SNum
@@ -270,7 +288,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
                 var optionsBuilder = new DbContextOptionsBuilder()
                     .EnableSensitiveDataLogging()
-                    .UseSqlServer(testDatabase.ConnectionString)
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(serviceProvider);
 
                 using (var db = new BloggingContext(optionsBuilder.Options))
@@ -348,7 +366,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             using (var testDatabase = await SqlServerTestStore.CreateScratchAsync())
             {
                 var optionsBuilder = new DbContextOptionsBuilder()
-                    .UseSqlServer(testDatabase.ConnectionString)
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_fixture.ServiceProvider);
 
                 int updatedId;
@@ -406,24 +424,31 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
         [Fact]
         public void Can_track_an_entity_with_more_than_10_properties()
         {
-            using (var context = new GameDbContext())
+            using (var testDatabase = SqlServerTestStore.CreateScratch())
             {
-                context.Database.EnsureClean();
+                var optionsBuilder = new DbContextOptionsBuilder()
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
+                    .UseInternalServiceProvider(_fixture.ServiceProvider);
 
-                context.Characters.Add(new PlayerCharacter(new Level { Game = new Game() }));
+                using (var context = new GameDbContext(optionsBuilder.Options))
+                {
+                    context.Database.EnsureClean();
 
-                context.SaveChanges();
-            }
+                    context.Characters.Add(new PlayerCharacter(new Level { Game = new Game() }));
 
-            using (var context = new GameDbContext())
-            {
-                var character = context.Characters
-                    .Include(c => c.Level.Game)
-                    .First();
+                    context.SaveChanges();
+                }
 
-                Assert.NotNull(character.Game);
-                Assert.NotNull(character.Level);
-                Assert.NotNull(character.Level.Game);
+                using (var context = new GameDbContext(optionsBuilder.Options))
+                {
+                    var character = context.Characters
+                        .Include(c => c.Level.Game)
+                        .First();
+
+                    Assert.NotNull(character.Game);
+                    Assert.NotNull(character.Level);
+                    Assert.NotNull(character.Level.Game);
+                }
             }
         }
 
@@ -488,8 +513,10 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
         public class GameDbContext : DbContext
         {
-            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("GameDbContext"));
+            public GameDbContext(DbContextOptions options)
+                : base(options)
+            {
+            }
 
             public DbSet<Game> Games { get; set; }
             public DbSet<Level> Levels { get; set; }
@@ -500,28 +527,28 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 modelBuilder.Entity<Level>(eb => { eb.HasKey(l => new { l.GameId, l.Id }); });
 
                 modelBuilder.Entity<Actor>(eb =>
-                {
-                    eb.HasKey(a => new { a.GameId, a.Id });
-                    eb.HasOne(a => a.Level)
-                        .WithMany()
-                        .HasForeignKey(nameof(Actor.GameId), "LevelId")
-                        .IsRequired();
-                });
+                    {
+                        eb.HasKey(a => new { a.GameId, a.Id });
+                        eb.HasOne(a => a.Level)
+                            .WithMany()
+                            .HasForeignKey(nameof(Actor.GameId), "LevelId")
+                            .IsRequired();
+                    });
 
                 modelBuilder.Entity<PlayerCharacter>();
 
                 modelBuilder.Entity<Game>(eb =>
-                {
-                    eb.Property(g => g.Id)
-                        .ValueGeneratedOnAdd();
-                    eb.HasMany(g => g.Levels)
-                        .WithOne(l => l.Game)
-                        .HasForeignKey(l => l.GameId);
-                    eb.HasMany(g => g.Actors)
-                        .WithOne(a => a.Game)
-                        .HasForeignKey(a => a.GameId)
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
+                    {
+                        eb.Property(g => g.Id)
+                            .ValueGeneratedOnAdd();
+                        eb.HasMany(g => g.Levels)
+                            .WithOne(l => l.Game)
+                            .HasForeignKey(l => l.GameId);
+                        eb.HasMany(g => g.Actors)
+                            .WithOne(a => a.Game)
+                            .HasForeignKey(a => a.GameId)
+                            .OnDelete(DeleteBehavior.Restrict);
+                    });
             }
         }
 
@@ -591,7 +618,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             public DbSet<Black> Blacks { get; set; }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(Connection).UseInternalServiceProvider(_serviceProvider);
+                => optionsBuilder.UseSqlServer(Connection, b => b.ApplyConfiguration()).UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
             {
@@ -640,7 +667,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             using (var testDatabase = await SqlServerTestStore.CreateScratchAsync())
             {
                 var optionsBuilder = new DbContextOptionsBuilder()
-                    .UseSqlServer(testDatabase.ConnectionString)
+                    .UseSqlServer(testDatabase.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_fixture.ServiceProvider);
 
                 int blog1Id;
@@ -779,7 +806,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerNorthwindContext.ConnectionString)
+                    .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 using System.Data.SqlClient;
 using System.IO;
@@ -11,6 +12,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Specification.Tests;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Storage.Internal;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
 {
@@ -24,11 +28,8 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
         private static string BaseDirectory => AppDomain.CurrentDomain.BaseDirectory;
 #endif
 
-        public static SqlServerTestStore GetOrCreateShared(string name, bool useTransaction, Action initializeDatabase)
-            => new SqlServerTestStore(name).CreateShared(initializeDatabase, useTransaction);
-
         public static SqlServerTestStore GetOrCreateShared(string name, Action initializeDatabase)
-            => GetOrCreateShared(name, true, initializeDatabase);
+            => new SqlServerTestStore(name).CreateShared(initializeDatabase);
 
         /// <summary>
         ///     A non-transactional, transient, isolated test database. Use this in the case
@@ -41,26 +42,25 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
             => new SqlServerTestStore(GetScratchDbName(), useFileName).CreateTransient(createDatabase);
 
         private SqlConnection _connection;
-        private SqlTransaction _transaction;
-        private readonly string _name;
         private readonly string _fileName;
         private string _connectionString;
         private bool _deleteDatabase;
 
+        public string Name { get; }
         public override string ConnectionString => _connectionString;
 
         // Use async static factory method
         private SqlServerTestStore(string name, bool useFileName = false)
         {
-            _name = name;
+            Name = name;
 
             if (useFileName)
             {
-                #if NET451
+#if NET451
 
                 var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
-                #else
+#else
 
                 var baseDirectory = AppContext.BaseDirectory;
 
@@ -83,52 +83,68 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
             return name;
         }
 
-        private SqlServerTestStore CreateShared(Action initializeDatabase, bool useTransaction)
+        private SqlServerTestStore CreateShared(Action initializeDatabase)
         {
-            CreateShared(typeof(SqlServerTestStore).Name + _name, initializeDatabase);
+            CreateShared(typeof(SqlServerTestStore).Name + Name,
+                () =>
+                {
+                    CreateDatabase(Name);
+                    if (initializeDatabase != null)
+                    {
+                        initializeDatabase();
+                    }
+                });
 
-            _connectionString = CreateConnectionString(_name, _fileName);
+            _connectionString = CreateConnectionString(Name, _fileName);
             _connection = new SqlConnection(_connectionString);
-
-            if (useTransaction)
-            {
-                _connection.Open();
-
-                _transaction = _connection.BeginTransaction();
-            }
 
             return this;
         }
 
         public static void CreateDatabase(string name, string scriptPath = null, bool nonMasterScript = false, bool recreateIfAlreadyExists = false)
         {
-            using (var master = new SqlConnection(CreateConnectionString("master", multipleActiveResultSets: false)))
+            using (var master = new SqlConnection(CreateConnectionString("master", false)))
             {
-                master.Open();
+                GetExecutionStrategy().Execute(connection =>
+                    {
+                        if (connection.State != ConnectionState.Closed)
+                        {
+                            connection.Close();
+                        }
+                        connection.Open();
+                    }, master);
 
                 using (var command = master.CreateCommand())
                 {
                     command.CommandTimeout = CommandTimeout;
 
                     var exists = DatabaseExists(name);
-                    if (exists && (recreateIfAlreadyExists || !TablesExist(name)))
+                    if (exists)
                     {
-                        // if scriptPath is non-null assume that the script will handle dropping DB
-                        if (scriptPath == null
-                            || nonMasterScript)
+                        if (recreateIfAlreadyExists)
                         {
-                            command.CommandText = GetDeleteDatabaseSql(name);
+                            // if scriptPath is non-null assume that the script will handle dropping DB
+                            if (scriptPath == null
+                                || nonMasterScript)
+                            {
+                                command.CommandText = GetDeleteDatabaseSql(name);
 
-                            command.ExecuteNonQuery();
+                                command.ExecuteNonQuery();
+                            }
+                            exists = false;
+                        }
+                        else
+                        {
+                            Clean(name);
                         }
                     }
 
-                    if (!exists || recreateIfAlreadyExists)
+                    try
                     {
-                        if (scriptPath == null
-                            || nonMasterScript)
+                        if (!exists
+                            && (scriptPath == null || nonMasterScript))
                         {
-                            command.CommandText = $@"CREATE DATABASE [{name}]";
+                            command.CommandText = GetCreateDatabaseStatement(name, null);
 
                             command.ExecuteNonQuery();
 
@@ -154,13 +170,27 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
 
                             if (nonMasterScript)
                             {
-                                using (var newConnection = new SqlConnection(CreateConnectionString(name)))
+                                using (var connection = new SqlConnection(CreateConnectionString(name)))
                                 {
-                                    newConnection.Open();
-                                    using (var nonMasterCommand = newConnection.CreateCommand())
-                                    {
-                                        ExecuteScript(scriptPath, nonMasterCommand);
-                                    }
+                                    GetExecutionStrategy().Execute(state =>
+                                        {
+                                            if (state.connection.State != ConnectionState.Closed)
+                                            {
+                                                state.connection.Close();
+                                            }
+                                            state.connection.Open();
+
+                                            using (var transaction = state.connection.BeginTransaction())
+                                            {
+                                                using (var nonMasterCommand = state.connection.CreateCommand())
+                                                {
+                                                    nonMasterCommand.CommandTimeout = CommandTimeout;
+                                                    nonMasterCommand.Transaction = transaction;
+                                                    ExecuteScript(state.scriptPath, nonMasterCommand);
+                                                    transaction.Commit();
+                                                }
+                                            }
+                                        }, new { connection, scriptPath });
                                 }
                             }
                             else
@@ -168,6 +198,36 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
                                 ExecuteScript(scriptPath, command);
                             }
                         }
+                    }
+                    catch (Exception)
+                    {
+                        if (!exists)
+                        {
+                            try
+                            {
+                                GetExecutionStrategy().Execute(connection =>
+                                    {
+                                        if (connection.State != ConnectionState.Open)
+                                        {
+                                            if (connection.State != ConnectionState.Closed)
+                                            {
+                                                connection.Close();
+                                            }
+                                            connection.Open();
+                                        }
+                                        using (var dropCommand = connection.CreateCommand())
+                                        {
+                                            dropCommand.CommandTimeout = CommandTimeout;
+                                            dropCommand.CommandText = GetDeleteDatabaseSql(name);
+                                            dropCommand.ExecuteNonQuery();
+                                        }
+                                    }, master);
+                            }
+                            catch (Exception)
+                            {
+                            }
+                        }
+                        throw;
                     }
                 }
             }
@@ -185,91 +245,104 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
             }
         }
 
-        private static async Task WaitForExistsAsync(SqlConnection connection)
-        {
-            var retryCount = 0;
-            while (true)
-            {
-                try
-                {
-                    await connection.OpenAsync();
-
-                    connection.Close();
-
-                    return;
-                }
-                catch (SqlException e)
-                {
-                    if (++retryCount >= 30
-                        || (e.Number != 233 && e.Number != -2 && e.Number != 4060 && e.Number != 1832 && e.Number != 5120))
+        private static Task WaitForExistsAsync(SqlConnection connection)
+            => GetExecutionStrategy().ExecuteAsync(
+                async (connectionScoped, ct) =>
                     {
-                        throw;
-                    }
+                        var retryCount = 0;
+                        while (true)
+                        {
+                            try
+                            {
+                                await connectionScoped.OpenAsync(ct);
 
-                    SqlConnection.ClearPool(connection);
+                                connectionScoped.Close();
+                                return;
+                            }
+                            catch (SqlException e)
+                            {
+                                if (++retryCount >= 30
+                                    || (e.Number != 233 && e.Number != -2 && e.Number != 4060 && e.Number != 1832 && e.Number != 5120))
+                                {
+                                    throw;
+                                }
 
-                    Thread.Sleep(100);
-                }
-            }
-        }
+                                SqlConnection.ClearPool(connectionScoped);
+
+                                await Task.Delay(100, ct);
+                            }
+                        }
+                    }, connection, CancellationToken.None);
 
         private static void WaitForExists(SqlConnection connection)
-        {
-            var retryCount = 0;
-            while (true)
-            {
-                try
-                {
-                    connection.Open();
-
-                    connection.Close();
-
-                    return;
-                }
-                catch (SqlException e)
-                {
-                    if (++retryCount >= 30
-                        || (e.Number != 233 && e.Number != -2 && e.Number != 4060 && e.Number != 1832 && e.Number != 5120))
+            => GetExecutionStrategy().Execute(
+                connectionScoped =>
                     {
-                        throw;
-                    }
+                        var retryCount = 0;
+                        while (true)
+                        {
+                            try
+                            {
+                                if (connectionScoped.State != ConnectionState.Closed)
+                                {
+                                    connectionScoped.Close();
+                                }
+                                connectionScoped.Open();
+                                connectionScoped.Close();
+                                return;
+                            }
+                            catch (SqlException e)
+                            {
+                                if (++retryCount >= 30
+                                    || (e.Number != 233 && e.Number != -2 && e.Number != 4060 && e.Number != 1832 && e.Number != 5120))
+                                {
+                                    throw;
+                                }
 
-                    SqlConnection.ClearPool(connection);
+                                SqlConnection.ClearPool(connectionScoped);
 
-                    Thread.Sleep(100);
-                }
-            }
-        }
+                                Thread.Sleep(100);
+                            }
+                        }
+                    }, connection);
 
         private async Task<SqlServerTestStore> CreateTransientAsync(bool createDatabase)
         {
-            _connectionString = CreateConnectionString(_name, _fileName);
+            _connectionString = CreateConnectionString(Name, _fileName);
             _connection = new SqlConnection(_connectionString);
 
+            var exists = DatabaseExists(Name);
             if (createDatabase)
             {
-                using (var master = new SqlConnection(CreateConnectionString("master")))
+                if (!exists)
                 {
-                    await master.OpenAsync();
-                    using (var command = master.CreateCommand())
+                    using (var master = new SqlConnection(CreateConnectionString("master")))
                     {
-                        command.CommandTimeout = CommandTimeout;
-                        command.CommandText = $"{Environment.NewLine}CREATE DATABASE [{_name}]";
+                        await GetExecutionStrategy().ExecuteAsync(async (connection, ct) =>
+                            {
+                                await connection.OpenAsync(ct);
+                                using (var command = connection.CreateCommand())
+                                {
+                                    command.CommandTimeout = CommandTimeout;
+                                    command.CommandText = GetCreateDatabaseStatement(Name, _fileName);
 
-                        if (!string.IsNullOrEmpty(_fileName))
-                        {
-                            var logFileName = Path.ChangeExtension(_fileName, ".ldf");
-
-                            command.CommandText += $" ON (NAME = '{_name}', FILENAME = '{_fileName}')";
-                            command.CommandText += $" LOG ON (NAME = '{_name}_log', FILENAME = '{logFileName}')";
-                        }
-
-                        await command.ExecuteNonQueryAsync();
-
-                        await WaitForExistsAsync(_connection);
+                                    await command.ExecuteNonQueryAsync(ct);
+                                }
+                            }, master);
                     }
+
+                    await WaitForExistsAsync(_connection);
                 }
-                await _connection.OpenAsync();
+                else
+                {
+                    Clean(Name);
+                }
+
+                await GetExecutionStrategy().ExecuteAsync((connection, ct) => connection.OpenAsync(ct), _connection);
+            }
+            else if (exists)
+            {
+                DeleteDatabase(Name);
             }
 
             _deleteDatabase = true;
@@ -278,74 +351,143 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
 
         private SqlServerTestStore CreateTransient(bool createDatabase)
         {
-            _connectionString = CreateConnectionString(_name, _fileName);
+            _connectionString = CreateConnectionString(Name, _fileName);
             _connection = new SqlConnection(_connectionString);
 
+            var exists = DatabaseExists(Name);
             if (createDatabase)
             {
-                using (var master = new SqlConnection(CreateConnectionString("master")))
+                if (!exists)
                 {
-                    master.Open();
-                    using (var command = master.CreateCommand())
+                    using (var master = new SqlConnection(CreateConnectionString("master")))
                     {
-                        command.CommandTimeout = CommandTimeout;
-                        command.CommandText = $"{Environment.NewLine}CREATE DATABASE [{_name}]";
+                        GetExecutionStrategy().Execute(connection =>
+                            {
+                                if (connection.State != ConnectionState.Closed)
+                                {
+                                    connection.Close();
+                                }
+                                connection.Open();
+                                using (var command = connection.CreateCommand())
+                                {
+                                    command.CommandTimeout = CommandTimeout;
+                                    command.CommandText = GetCreateDatabaseStatement(Name, _fileName);
 
-                        if (!string.IsNullOrEmpty(_fileName))
-                        {
-                            var logFileName = Path.ChangeExtension(_fileName, ".ldf");
-
-                            command.CommandText += $" ON (NAME = '{_name}', FILENAME = '{_fileName}')";
-                            command.CommandText += $" LOG ON (NAME = '{_name}_log', FILENAME = '{logFileName}')";
-                        }
-
-                        command.ExecuteNonQuery();
-
-                        WaitForExists(_connection);
+                                    command.ExecuteNonQuery();
+                                }
+                            }, master);
                     }
+
+                    WaitForExists(_connection);
                 }
-                _connection.Open();
+                else
+                {
+                    Clean(Name);
+                }
+
+                GetExecutionStrategy().Execute(connection => connection.Open(), _connection);
+            }
+            else if (exists)
+            {
+                DeleteDatabase(Name);
             }
 
             _deleteDatabase = true;
             return this;
         }
 
+        private static void Clean(string name)
+        {
+            var serviceProvider = new ServiceCollection()
+                .AddEntityFrameworkSqlServer()
+                .BuildServiceProvider();
+
+            var options = new DbContextOptionsBuilder()
+                .UseSqlServer(CreateConnectionString(name), b => b.ApplyConfiguration())
+                .EnableSensitiveDataLogging()
+                .UseInternalServiceProvider(serviceProvider)
+                .Options;
+
+            using (var context = new DbContext(options))
+            {
+                context.Database.EnsureClean();
+            }
+        }
+
+        private static string GetCreateDatabaseStatement(string name, string fileName)
+        {
+            var result = $"CREATE DATABASE [{name}]";
+
+            if (TestEnvironment.IsSqlAzure)
+            {
+                var elasticGroupName = TestEnvironment.ElasticGroupName;
+                result += Environment.NewLine +
+                          (string.IsNullOrEmpty(elasticGroupName)
+                              ? " ( Edition = 'basic' )"
+                              : $" ( SERVICE_OBJECTIVE = ELASTIC_POOL ( name = {elasticGroupName} ) )");
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(fileName))
+                {
+                    var logFileName = Path.ChangeExtension(fileName, ".ldf");
+                    result += Environment.NewLine +
+                              $" ON (NAME = '{name}', FILENAME = '{fileName}')" +
+                              $" LOG ON (NAME = '{name}_log', FILENAME = '{logFileName}')";
+                }
+            }
+            return result;
+        }
+
         private static bool DatabaseExists(string name)
         {
             using (var master = new SqlConnection(CreateConnectionString("master")))
             {
-                master.Open();
+                return GetExecutionStrategy().Execute(connection =>
+                    {
+                        if (connection.State != ConnectionState.Closed)
+                        {
+                            connection.Close();
+                        }
+                        connection.Open();
 
-                using (var command = master.CreateCommand())
-                {
-                    command.CommandTimeout = CommandTimeout;
-                    command.CommandText = $@"SELECT COUNT(*) FROM sys.databases WHERE name = N'{name}'";
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandTimeout = CommandTimeout;
+                            command.CommandText = $@"SELECT COUNT(*) FROM sys.databases WHERE name = N'{name}'";
 
-                    return (int)command.ExecuteScalar() > 0;
-                }
+                            return (int)command.ExecuteScalar() > 0;
+                        }
+                    }, master);
             }
         }
 
         private static bool TablesExist(string name)
         {
-            using (var connection = new SqlConnection(CreateConnectionString(name)))
+            using (var c = new SqlConnection(CreateConnectionString(name)))
             {
-                connection.Open();
+                return GetExecutionStrategy().Execute(connection =>
+                    {
+                        if (connection.State != ConnectionState.Closed)
+                        {
+                            connection.Close();
+                        }
+                        connection.Open();
 
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandTimeout = CommandTimeout;
-                    command.CommandText = @"SELECT COUNT(*) FROM information_schema.tables";
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandTimeout = CommandTimeout;
+                            command.CommandText = @"SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA != 'sys'";
 
-                    var result = (int)command.ExecuteScalar() > 0;
+                            var result = (int)command.ExecuteScalar() > 0;
 
-                    connection.Close();
+                            connection.Close();
 
-                    SqlConnection.ClearAllPools();
+                            SqlConnection.ClearAllPools();
 
-                    return result;
-                }
+                            return result;
+                        }
+                    }, c);
             }
         }
 
@@ -361,30 +503,45 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
         {
             using (var master = new SqlConnection(CreateConnectionString("master")))
             {
-                master.Open();
+                GetExecutionStrategy().Execute(connection =>
+                    {
+                        if (connection.State != ConnectionState.Open)
+                        {
+                            if (connection.State != ConnectionState.Closed)
+                            {
+                                connection.Close();
+                            }
+                            connection.Open();
+                        }
 
-                using (var command = master.CreateCommand())
-                {
-                    command.CommandTimeout = CommandTimeout; // Query will take a few seconds if (and only if) there are active connections
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandTimeout = CommandTimeout; // Query will take a few seconds if (and only if) there are active connections
 
-                    // SET SINGLE_USER will close any open connections that would prevent the drop
-                    command.CommandText = GetDeleteDatabaseSql(name);
+                            command.CommandText = GetDeleteDatabaseSql(name);
 
-                    command.ExecuteNonQuery();
-                }
+                            command.ExecuteNonQuery();
+                        }
+
+                        SqlConnection.ClearPool(connection);
+                    }, master);
             }
         }
 
         private static string GetDeleteDatabaseSql(string name)
+            // SET SINGLE_USER will close any open connections that would prevent the drop
             => string.Format(@"IF EXISTS (SELECT * FROM sys.databases WHERE name = N'{0}')
                                           BEGIN
                                               ALTER DATABASE [{0}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                                               DROP DATABASE [{0}];
                                           END", name);
 
+        public static IExecutionStrategy GetExecutionStrategy()
+            => TestEnvironment.IsSqlAzure ? new TestSqlAzureExecutionStrategy() : (IExecutionStrategy)NoopExecutionStrategy.Instance;
+
         public override DbConnection Connection => _connection;
 
-        public override DbTransaction Transaction => _transaction;
+        public override DbTransaction Transaction => null;
 
         public async Task<T> ExecuteScalarAsync<T>(string sql, CancellationToken cancellationToken, params object[] parameters)
         {
@@ -432,11 +589,6 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
         {
             var command = _connection.CreateCommand();
 
-            if (_transaction != null)
-            {
-                command.Transaction = _transaction;
-            }
-
             command.CommandText = commandText;
             command.CommandTimeout = CommandTimeout;
 
@@ -450,13 +602,11 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities
 
         public override void Dispose()
         {
-            _transaction?.Dispose();
-
             _connection.Dispose();
 
             if (_deleteDatabase)
             {
-                DeleteDatabase(_name);
+                DeleteDatabase(Name);
             }
         }
 

@@ -21,7 +21,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.TestModels
         {
             return SqlServerTestStore.GetOrCreateShared(
                 DatabaseName,
-                () => SqlServerTestStore.CreateDatabase(DatabaseName, scriptPath: @"Northwind.sql"));
+                () => SqlServerTestStore.CreateDatabase(DatabaseName, scriptPath: @"Northwind.sql", nonMasterScript: true));
         }
     }
 }

@@ -32,7 +32,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             return SqlServerTestStore.GetOrCreateShared(DatabaseName, () =>
                 {
                     using (var context = new NullSemanticsContext(new DbContextOptionsBuilder()
-                        .UseSqlServer(_connectionString)
+                        .UseSqlServer(_connectionString, b => b.ApplyConfiguration())
                         .UseInternalServiceProvider(_serviceProvider).Options))
                     {
                         context.Database.EnsureClean();
@@ -52,6 +52,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                     testStore.Connection,
                     b =>
                         {
+                            b.ApplyConfiguration();
                             if (useRelationalNulls)
                             {
                                 b.UseRelationalNulls();

@@ -58,6 +58,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 => optionsBuilder.UseSqlServer(
                     _connection, b =>
                         {
+                            b.ApplyConfiguration();
                             if (_rowNumberPaging)
                             {
                                 b.UseRowNumberForPaging();

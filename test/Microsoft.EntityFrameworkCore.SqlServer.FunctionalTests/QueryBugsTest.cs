@@ -101,7 +101,7 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
             }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseInternalServiceProvider(_serviceProvider).UseSqlServer(_connectionString);
+                => optionsBuilder.UseInternalServiceProvider(_serviceProvider).UseSqlServer(_connectionString, b => b.ApplyConfiguration());
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
                 => modelBuilder.Entity<Customer>().ToTable("Customers");
@@ -155,7 +155,7 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
             }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(_connectionString);
+                => optionsBuilder.UseSqlServer(_connectionString, b => b.ApplyConfiguration());
 
             public DbSet<Person> Persons { get; set; }
             public DbSet<Address> Addresses { get; set; }
@@ -252,7 +252,7 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
             }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(_connectionString);
+                => optionsBuilder.UseSqlServer(_connectionString, b => b.ApplyConfiguration());
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
                 => modelBuilder.Entity<ZeroKey>().ToTable("ZeroKey");
@@ -268,10 +268,9 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
         [Fact]
         public async Task First_FirstOrDefault_ix_async_bug_603()
         {
+            CreateDatabase603();
             using (var context = new MyContext603(_fixture.ServiceProvider))
             {
-                context.Database.EnsureClean();
-
                 context.Products.Add(new Product { Name = "Product 1" });
                 context.SaveChanges();
             }
@@ -285,10 +284,10 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
                 await ctx.SaveChangesAsync();
             }
 
+            CreateDatabase603();
+
             using (var context = new MyContext603(_fixture.ServiceProvider))
             {
-                context.Database.EnsureClean();
-
                 context.Products.Add(new Product { Name = "Product 1" });
                 context.SaveChanges();
             }
@@ -323,11 +322,23 @@ INSERT [dbo].[Postcodes] ([PostcodeID], [PostcodeValue], [TownName]) VALUES (5, 
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro603"))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro603"), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
                 => modelBuilder.Entity<Product>().ToTable("Product");
+        }
+
+        private void CreateDatabase603()
+        {
+            CreateTestStore(
+                "Repro603",
+                _fixture.ServiceProvider,
+                (sp, co) => new MyContext603(sp),
+                context =>
+                {
+                    context.Database.EnsureClean();
+                });
         }
 
         [Fact]
@@ -451,7 +462,7 @@ LEFT JOIN [Customer] AS [c] ON ([o].[CustomerFirstName] = [c].[FirstName]) AND (
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
                     .EnableSensitiveDataLogging()
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro925"))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro925"), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -595,7 +606,7 @@ Queen of the Andals and the Rhoynar and the First Men, Khaleesi of the Great Gra
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro963"))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro963"), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -710,7 +721,7 @@ WHERE ([c].[FirstName] = @__firstName_0) AND ([c].[LastName] = @__8__locals1_det
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3758"))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3758"), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -868,7 +879,7 @@ WHERE ([c].[FirstName] = @__firstName_0) AND ([c].[LastName] = @__8__locals1_det
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3409"))
+                    .UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3409"), b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(_serviceProvider);
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -1222,7 +1233,7 @@ WHERE ([c].[FirstName] = @__firstName_0) AND ([c].[LastName] = @__8__locals1_det
             public DbSet<Child3101> Children { get; set; }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3101"));
+                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro3101"), b => b.ApplyConfiguration());
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
             {
@@ -1388,7 +1399,7 @@ WHERE ([c].[FirstName] = @__firstName_0) AND ([c].[LastName] = @__8__locals1_det
             public DbSet<Author5456> Authors { get; set; }
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro5456"));
+                => optionsBuilder.UseSqlServer(SqlServerTestStore.CreateConnectionString("Repro5456"), b => b.ApplyConfiguration());
         }
 
         public class Blog5456
@@ -1426,18 +1437,18 @@ WHERE ([c].[FirstName] = @__firstName_0) AND ([c].[LastName] = @__8__locals1_det
         {
             var connectionString = SqlServerTestStore.CreateConnectionString(databaseName);
             SqlServerTestStore.GetOrCreateShared(databaseName, () =>
-            {
-                var optionsBuilder = new DbContextOptionsBuilder();
-                optionsBuilder.UseSqlServer(connectionString);
-
-                using (var context = contextCreator(serviceProvider, optionsBuilder.Options))
                 {
-                    context.Database.EnsureClean();
-                    contextInitializer(context);
+                    var optionsBuilder = new DbContextOptionsBuilder();
+                    optionsBuilder.UseSqlServer(connectionString, b => b.ApplyConfiguration());
 
-                    TestSqlLoggerFactory.Reset();
-                }
-            });
+                    using (var context = contextCreator(serviceProvider, optionsBuilder.Options))
+                    {
+                        context.Database.EnsureClean();
+                        contextInitializer(context);
+
+                        TestSqlLoggerFactory.Reset();
+                    }
+                });
         }
     }
 }

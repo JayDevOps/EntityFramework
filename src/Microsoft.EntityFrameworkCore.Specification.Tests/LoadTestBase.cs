@@ -11,15 +11,10 @@ using Xunit;
 
 namespace Microsoft.EntityFrameworkCore.Specification.Tests
 {
-    public abstract class LoadTestBase<TFixture> : IClassFixture<TFixture>, IDisposable
-        where TFixture : LoadTestBase<TFixture>.LoadFixtureBase, new()
+    public abstract class LoadTestBase<TTestStore, TFixture> : IClassFixture<TFixture>, IDisposable
+        where TTestStore : TestStore
+        where TFixture : LoadTestBase<TTestStore, TFixture>.LoadFixtureBase
     {
-        protected LoadTestBase(TFixture fixture)
-        {
-            Fixture = fixture;
-            fixture.Initialize();
-        }
-
         [Theory]
         [InlineData(true)]
         [InlineData(false)]
@@ -3278,7 +3273,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             }
         }
 
-        protected class Parent
+        public class Parent
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3299,7 +3294,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public SingleCompositeKey SingleCompositeKey { get; set; }
         }
 
-        protected class Child
+        public class Child
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3308,7 +3303,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class SinglePkToPk
+        public class SinglePkToPk
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3316,7 +3311,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class Single
+        public class Single
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3325,7 +3320,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class ChildAk
+        public class ChildAk
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3334,7 +3329,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class SingleAk
+        public class SingleAk
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3343,7 +3338,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class ChildShadowFk
+        public class ChildShadowFk
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3351,7 +3346,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class SingleShadowFk
+        public class SingleShadowFk
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3359,7 +3354,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class ChildCompositeKey
+        public class ChildCompositeKey
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3369,7 +3364,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class SingleCompositeKey
+        public class SingleCompositeKey
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -3379,7 +3374,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public Parent Parent { get; set; }
         }
 
-        protected class LoadContext : DbContext
+        public class LoadContext : DbContext
         {
             public LoadContext(DbContextOptions options)
                 : base(options)
@@ -3398,13 +3393,19 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public DbSet<ChildCompositeKey> ChildrenCompositeKeys { get; set; }
         }
 
-        protected LoadContext CreateContext() => (LoadContext)Fixture.CreateContext();
+        protected LoadTestBase(TFixture fixture)
+        {
+            Fixture = fixture;
+
+            TestStore = Fixture.CreateTestStore();
+        }
+
+        protected LoadContext CreateContext() => Fixture.CreateContext(TestStore);
 
         protected TFixture Fixture { get; }
+        protected TTestStore TestStore { get; }
 
-        public virtual void Dispose()
-        {
-        }
+        public virtual void Dispose() => TestStore.Dispose();
 
         public virtual void ClearLog()
         {
@@ -3416,24 +3417,9 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
 
         public abstract class LoadFixtureBase
         {
-            private static readonly object _lock = new object();
-            private static bool _initialized;
+            public abstract TTestStore CreateTestStore();
 
-            public virtual void Initialize()
-            {
-                lock (_lock)
-                {
-                    if (!_initialized)
-                    {
-                        CreateTestStore();
-                        _initialized = true;
-                    }
-                }
-            }
-
-            public abstract void CreateTestStore();
-
-            public abstract DbContext CreateContext();
+            public abstract LoadContext CreateContext(TTestStore testStore);
 
             protected virtual void OnModelCreating(ModelBuilder modelBuilder)
             {

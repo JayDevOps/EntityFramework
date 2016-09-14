@@ -9,15 +9,10 @@ using Xunit;
 
 namespace Microsoft.EntityFrameworkCore.Specification.Tests
 {
-    public abstract class FindTestBase<TFixture> : IClassFixture<TFixture>, IDisposable
-        where TFixture : FindTestBase<TFixture>.FindFixtureBase, new()
+    public abstract class FindTestBase<TTestStore, TFixture> : IClassFixture<TFixture>, IDisposable
+        where TTestStore : TestStore
+        where TFixture : FindTestBase<TTestStore, TFixture>.FindFixtureBase
     {
-        protected FindTestBase(TFixture fixture)
-        {
-            Fixture = fixture;
-            fixture.Initialize();
-        }
-
         protected abstract TEntity Find<TEntity>(DbContext context, params object[] keyValues) where TEntity : class;
 
         protected abstract Task<TEntity> FindAsync<TEntity>(DbContext context, params object[] keyValues) where TEntity : class;
@@ -622,7 +617,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             }
         }
 
-        protected class BaseType
+        public class BaseType
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -630,12 +625,12 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public string Foo { get; set; }
         }
 
-        protected class DerivedType : BaseType
+        public class DerivedType : BaseType
         {
             public string Boo { get; set; }
         }
 
-        protected class IntKey
+        public class IntKey
         {
             [DatabaseGenerated(DatabaseGeneratedOption.None)]
             public int Id { get; set; }
@@ -643,26 +638,26 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public string Foo { get; set; }
         }
 
-        protected class StringKey
+        public class StringKey
         {
             public string Id { get; set; }
 
             public string Foo { get; set; }
         }
 
-        protected class CompositeKey
+        public class CompositeKey
         {
             public int Id1 { get; set; }
             public string Id2 { get; set; }
             public string Foo { get; set; }
         }
 
-        protected class ShadowKey
+        public class ShadowKey
         {
             public string Foo { get; set; }
         }
 
-        protected class FindContext : DbContext
+        public class FindContext : DbContext
         {
             public FindContext(DbContextOptions options)
                 : base(options)
@@ -677,34 +672,25 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
             public DbSet<ShadowKey> ShadowKeys { get; set; }
         }
 
-        protected FindContext CreateContext() => (FindContext)Fixture.CreateContext();
+        protected FindTestBase(TFixture fixture)
+        {
+            Fixture = fixture;
+
+            TestStore = Fixture.CreateTestStore();
+        }
+
+        protected FindContext CreateContext() => Fixture.CreateContext(TestStore);
 
         protected TFixture Fixture { get; }
+        protected TTestStore TestStore { get; }
 
-        public virtual void Dispose()
-        {
-        }
+        public virtual void Dispose() => TestStore.Dispose();
 
         public abstract class FindFixtureBase
         {
-            private static readonly object _lock = new object();
-            private static bool _initialized;
+            public abstract TTestStore CreateTestStore();
 
-            public virtual void Initialize()
-            {
-                lock (_lock)
-                {
-                    if (!_initialized)
-                    {
-                        CreateTestStore();
-                        _initialized = true;
-                    }
-                }
-            }
-
-            public abstract void CreateTestStore();
-
-            public abstract DbContext CreateContext();
+            public abstract FindContext CreateContext(TTestStore testStore);
 
             protected virtual void OnModelCreating(ModelBuilder modelBuilder)
             {
@@ -712,7 +698,7 @@ namespace Microsoft.EntityFrameworkCore.Specification.Tests
                 modelBuilder.Entity<ShadowKey>().Property(typeof(int), "Id").ValueGeneratedNever();
             }
 
-            protected virtual void Seed(DbContext context)
+            protected virtual void Seed(FindContext context)
             {
                 context.AddRange(
                     new IntKey { Id = 77, Foo = "Smokey" },

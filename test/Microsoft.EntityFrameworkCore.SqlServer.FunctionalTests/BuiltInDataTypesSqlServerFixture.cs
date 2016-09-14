@@ -28,7 +28,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 .BuildServiceProvider();
 
             _options = new DbContextOptionsBuilder()
-                .UseSqlServer(_testStore.Connection)
+                .UseSqlServer(_testStore.Connection, b => b.ApplyConfiguration())
                 .EnableSensitiveDataLogging()
                 .UseInternalServiceProvider(serviceProvider)
                 .Options;

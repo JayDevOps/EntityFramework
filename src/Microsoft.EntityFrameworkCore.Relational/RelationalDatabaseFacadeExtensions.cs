@@ -116,11 +116,13 @@ namespace Microsoft.EntityFrameworkCore
                     .GetService<IRawSqlCommandBuilder>()
                     .Build(sql, parameters);
 
-                return rawSqlCommand
-                    .RelationalCommand
-                    .ExecuteNonQuery(
-                        GetRelationalConnection(databaseFacade),
-                        parameterValues: rawSqlCommand.ParameterValues);
+                return databaseFacade.CreateExecutionStrategy().Execute(database =>
+                    rawSqlCommand
+                        .RelationalCommand
+                        .ExecuteNonQuery(
+                            database.GetRelationalConnection(),
+                            rawSqlCommand.ParameterValues),
+                    databaseFacade);
             }
         }
 
@@ -140,12 +142,13 @@ namespace Microsoft.EntityFrameworkCore
                     .GetService<IRawSqlCommandBuilder>()
                     .Build(sql, parameters);
 
-                return await rawSqlCommand
-                    .RelationalCommand
-                    .ExecuteNonQueryAsync(
-                        GetRelationalConnection(databaseFacade),
-                        parameterValues: rawSqlCommand.ParameterValues,
-                        cancellationToken: cancellationToken);
+                return await databaseFacade.CreateExecutionStrategy().ExecuteAsync((database, ct) =>
+                    rawSqlCommand
+                        .RelationalCommand
+                        .ExecuteNonQueryAsync(
+                            database.GetRelationalConnection(),
+                            rawSqlCommand.ParameterValues,
+                            cancellationToken: cancellationToken), databaseFacade, cancellationToken);
             }
         }
 
@@ -153,40 +156,44 @@ namespace Microsoft.EntityFrameworkCore
             => GetRelationalConnection(databaseFacade).DbConnection;
 
         public static void OpenConnection([NotNull] this DatabaseFacade databaseFacade)
-            => GetRelationalConnection(databaseFacade).Open();
+            => databaseFacade.CreateExecutionStrategy().Execute(
+                database => database.GetRelationalConnection().Open(), databaseFacade);
 
         public static Task OpenConnectionAsync(
             [NotNull] this DatabaseFacade databaseFacade,
             CancellationToken cancellationToken = default(CancellationToken))
-            => GetRelationalConnection(databaseFacade).OpenAsync(cancellationToken);
+            => databaseFacade.CreateExecutionStrategy().ExecuteAsync((database, ct) =>
+                database.GetRelationalConnection().OpenAsync(cancellationToken), databaseFacade, cancellationToken);
 
         public static void CloseConnection([NotNull] this DatabaseFacade databaseFacade)
             => GetRelationalConnection(databaseFacade).Close();
 
         public static IDbContextTransaction BeginTransaction([NotNull] this DatabaseFacade databaseFacade, IsolationLevel isolationLevel)
-        {
-            var transactionManager = GetTransactionManager(databaseFacade);
+            => databaseFacade.CreateExecutionStrategy().Execute(database =>
+                {
+                    var transactionManager = database.GetTransactionManager();
 
-            var relationalTransactionManager = transactionManager as IRelationalTransactionManager;
+                    var relationalTransactionManager = transactionManager as IRelationalTransactionManager;
 
-            return relationalTransactionManager != null
-                ? relationalTransactionManager.BeginTransaction(isolationLevel)
-                : transactionManager.BeginTransaction();
-        }
+                    return relationalTransactionManager != null
+                        ? relationalTransactionManager.BeginTransaction(isolationLevel)
+                        : transactionManager.BeginTransaction();
+                }, databaseFacade);
 
         public static Task<IDbContextTransaction> BeginTransactionAsync(
             [NotNull] this DatabaseFacade databaseFacade,
             IsolationLevel isolationLevel,
             CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var transactionManager = GetTransactionManager(databaseFacade);
+            => databaseFacade.CreateExecutionStrategy().ExecuteAsync((database, ct) =>
+                {
+                    var transactionManager = database.GetTransactionManager();
 
-            var relationalTransactionManager = transactionManager as IRelationalTransactionManager;
+                    var relationalTransactionManager = transactionManager as IRelationalTransactionManager;
 
-            return relationalTransactionManager != null
-                ? relationalTransactionManager.BeginTransactionAsync(isolationLevel, cancellationToken)
-                : transactionManager.BeginTransactionAsync(cancellationToken);
-        }
+                    return relationalTransactionManager != null
+                        ? relationalTransactionManager.BeginTransactionAsync(isolationLevel, ct)
+                        : transactionManager.BeginTransactionAsync(ct);
+                }, databaseFacade, cancellationToken);
 
         public static IDbContextTransaction UseTransaction(
             [NotNull] this DatabaseFacade databaseFacade, [CanBeNull] DbTransaction transaction)

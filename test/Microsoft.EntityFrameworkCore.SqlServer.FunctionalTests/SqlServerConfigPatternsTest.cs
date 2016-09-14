@@ -3,10 +3,12 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.TestModels;
+using Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -33,7 +35,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 public DbSet<Customer> Customers { get; set; }
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                    => optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString);
+                    => optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration());
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                     => ConfigureModel(modelBuilder);
@@ -49,7 +51,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 {
                     using (var context = new NorthwindContext(
                         new DbContextOptionsBuilder()
-                            .UseSqlServer(SqlServerNorthwindContext.ConnectionString).Options))
+                            .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration()).Options))
                     {
                         Assert.Equal(91, await context.Customers.CountAsync());
                     }
@@ -98,8 +100,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 public DbSet<Customer> Customers { get; set; }
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                    => optionsBuilder
-                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString);
+                    => optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration());
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                     => ConfigureModel(modelBuilder);
@@ -114,7 +115,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 using (SqlServerNorthwindContext.GetSharedStore())
                 {
                     using (var context = new NorthwindContext(new DbContextOptionsBuilder()
-                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString)
+                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration())
                         .UseInternalServiceProvider(new ServiceCollection()
                             .AddEntityFrameworkSqlServer()
                             .BuildServiceProvider()).Options))
@@ -235,7 +236,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 public DbSet<Customer> Customers { get; set; }
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
-                    optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString);
+                    optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration());
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                     => ConfigureModel(modelBuilder);
@@ -286,7 +287,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 public DbSet<Customer> Customers { get; set; }
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                    => optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString);
+                    => optionsBuilder.UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration());
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                     => ConfigureModel(modelBuilder);
@@ -302,7 +303,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                     .AddTransient<MyController>()
                     .AddTransient<NorthwindContext>()
                     .AddSingleton(new DbContextOptionsBuilder()
-                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString).Options).BuildServiceProvider();
+                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration()).Options).BuildServiceProvider();
 
                 using (SqlServerNorthwindContext.GetSharedStore())
                 {
@@ -348,7 +349,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 using (SqlServerNorthwindContext.GetSharedStore())
                 {
                     using (var context = new NorthwindContext(new DbContextOptionsBuilder()
-                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString).Options))
+                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration()).Options))
                     {
                         Assert.Equal(91, await context.Customers.CountAsync());
                     }
@@ -395,7 +396,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
                 public DbSet<Customer> Customers { get; set; }
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                    => optionsBuilder.UseSqlServer(_connectionString);
+                    => optionsBuilder.UseSqlServer(_connectionString, b => b.ApplyConfiguration());
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                     => ConfigureModel(modelBuilder);
@@ -450,7 +451,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) => optionsBuilder
                     .UseInternalServiceProvider(_serviceProvider)
-                    .UseSqlServer(SqlServerNorthwindContext.ConnectionString);
+                    .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration());
             }
         }
 
@@ -481,33 +482,30 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             private async Task NestedContextTest(Func<BlogContext> createBlogContext, Func<NorthwindContext> createNorthwindContext)
             {
-                using (SqlServerNorthwindContext.GetSharedStore())
+                using (var context0 = createBlogContext())
                 {
-                    using (var context0 = createBlogContext())
-                    {
-                        Assert.Equal(0, context0.ChangeTracker.Entries().Count());
-                        var blog0 = context0.Add(new Blog { Id = 1, Name = "Giddyup" }).Entity;
-                        Assert.Same(blog0, context0.ChangeTracker.Entries().Select(e => e.Entity).Single());
-                        await context0.SaveChangesAsync();
+                    Assert.Equal(0, context0.ChangeTracker.Entries().Count());
+                    var blog0 = context0.Add(new Blog { Id = 1, Name = "Giddyup" }).Entity;
+                    Assert.Same(blog0, context0.ChangeTracker.Entries().Select(e => e.Entity).Single());
+                    await context0.SaveChangesAsync();
 
-                        using (var context1 = createNorthwindContext())
+                    using (var context1 = createNorthwindContext())
+                    {
+                        var customers1 = await context1.Customers.ToListAsync();
+                        Assert.Equal(91, customers1.Count);
+                        Assert.Equal(91, context1.ChangeTracker.Entries().Count());
+                        Assert.Same(blog0, context0.ChangeTracker.Entries().Select(e => e.Entity).Single());
+
+                        using (var context2 = createBlogContext())
                         {
-                            var customers1 = await context1.Customers.ToListAsync();
-                            Assert.Equal(91, customers1.Count);
-                            Assert.Equal(91, context1.ChangeTracker.Entries().Count());
+                            Assert.Equal(0, context2.ChangeTracker.Entries().Count());
                             Assert.Same(blog0, context0.ChangeTracker.Entries().Select(e => e.Entity).Single());
 
-                            using (var context2 = createBlogContext())
-                            {
-                                Assert.Equal(0, context2.ChangeTracker.Entries().Count());
-                                Assert.Same(blog0, context0.ChangeTracker.Entries().Select(e => e.Entity).Single());
+                            var blog0Prime = (await context2.Blogs.ToArrayAsync()).Single();
+                            Assert.Same(blog0Prime, context2.ChangeTracker.Entries().Select(e => e.Entity).Single());
 
-                                var blog0Prime = (await context2.Blogs.ToArrayAsync()).Single();
-                                Assert.Same(blog0Prime, context2.ChangeTracker.Entries().Select(e => e.Entity).Single());
-
-                                Assert.Equal(blog0.Id, blog0Prime.Id);
-                                Assert.NotSame(blog0, blog0Prime);
-                            }
+                            Assert.Equal(blog0.Id, blog0Prime.Id);
+                            Assert.NotSame(blog0, blog0Prime);
                         }
                     }
                 }
@@ -554,7 +552,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                     => optionsBuilder
-                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString)
+                        .UseSqlServer(SqlServerNorthwindContext.ConnectionString, b => b.ApplyConfiguration())
                         .UseInternalServiceProvider(_serviceProvider);
             }
         }

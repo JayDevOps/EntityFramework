@@ -271,7 +271,8 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             }
         }
 
-        [Fact]
+        [ConditionalFact]
+        [SqlServerCondition(SqlServerCondition.IsNotSqlAzure)]
         public async Task EnsureCreated_can_create_physical_database_and_schema()
         {
             await EnsureCreated_can_create_physical_database_and_schema_test(async: false, file: false);
@@ -284,7 +285,8 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             await EnsureCreated_can_create_physical_database_and_schema_test(async: false, file: true);
         }
 
-        [Fact]
+        [ConditionalFact]
+        [SqlServerCondition(SqlServerCondition.IsNotSqlAzure)]
         public async Task EnsureCreatedAsync_can_create_physical_database_and_schema()
         {
             await EnsureCreated_can_create_physical_database_and_schema_test(async: true, file: false);
@@ -297,12 +299,15 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             await EnsureCreated_can_create_physical_database_and_schema_test(async: true, file: true);
         }
 
-        private static async Task EnsureCreated_can_create_physical_database_and_schema_test(bool async, bool file)
+        private static Task EnsureCreated_can_create_physical_database_and_schema_test(bool async, bool file)
         {
-            using (var testDatabase = await SqlServerTestStore.CreateScratchAsync(createDatabase: false, useFileName: file))
-            {
-                await RunDatabaseCreationTest(testDatabase, async);
-            }
+            return SqlServerTestStore.GetExecutionStrategy().ExecuteAsync(async (state, ct) =>
+                {
+                    using (var testDatabase = await SqlServerTestStore.CreateScratchAsync(createDatabase: false, useFileName: state.file))
+                    {
+                        await RunDatabaseCreationTest(testDatabase, state.async);
+                    }
+                }, new {async, file});
         }
 
         private static async Task RunDatabaseCreationTest(SqlServerTestStore testStore, bool async)
@@ -422,7 +427,7 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
 
             protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                 => optionsBuilder
-                    .UseSqlServer(_testStore.ConnectionString)
+                    .UseSqlServer(_testStore.ConnectionString, b => b.ApplyConfiguration())
                     .UseInternalServiceProvider(CreateServiceProvider());
 
             protected override void OnModelCreating(ModelBuilder modelBuilder)
